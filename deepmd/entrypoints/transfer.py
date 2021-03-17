@@ -10,13 +10,6 @@ __all__ = ["transfer"]
 
 log = logging.getLogger(__name__)
 
-PRECISION_MAPPING: Dict[int, type] = {
-    1: np.float32,
-    2: np.float64,
-    19: np.float16,
-}
-
-
 @np.vectorize
 def convert_number(number: int) -> float:
     binary = bin(number).replace("0b", "").zfill(16)
@@ -72,7 +65,7 @@ def transfer(*, old_model: str, raw_model: str, output: str, **kwargs):
     new_graph_def = transform_graph(raw_graph, old_graph)
     with tf.gfile.GFile(output, mode="wb") as f:
         f.write(new_graph_def.SerializeToString())
-    log.info("the output model is saved in {output:s}")
+    log.info("the output model is saved in " + output)
 
 
 def load_graph(graph_name: str) -> tf.Graph:
@@ -111,63 +104,69 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
     tf.Graph
         new graph with parameters transfered form the old one
     """
+    precision_dict = {\
+    1:(np.float32, "float32"),\
+    2:(np.float64, "float64"),\
+    19:(np.float16, "float16")\
+    }
     old_graph_def = old_graph.as_graph_def()
     raw_graph_def = raw_graph.as_graph_def()
     raw_graph_node = load_transform_node(raw_graph_def)
     old_graph_node = load_transform_node(old_graph_def)
 
     for node in raw_graph_def.node:
-        if node.name not in raw_graph_node.keys():
-            continue
+        if node.name in raw_graph_node.keys():
+            check_dim(raw_graph_node, old_graph_node, node.name)
+            tensor_shape = [dim.size for dim in raw_graph_node[node.name].tensor_shape.dim]
+            old_graph_dtype = precision_dict[old_graph_node[node.name].dtype]
+            raw_graph_dtype = precision_dict[raw_graph_node[node.name].dtype]
+            log.info("%s is passed from old graph(%s) to raw graph(%s)" % (node.name, old_graph_dtype[1],raw_graph_dtype[1]))
+            
+            if raw_graph_dtype[1] == "float16":
+                if old_graph_dtype[1] == "float64" or old_graph_dtype[1] == "float32":
+                    if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                        tensor_value = np.frombuffer(old_graph_node[node.name].tensor_content, dtype=old_graph_dtype[0])
+                        tensor_value = tensor_value.astype(np.float16)
+                        node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value, tf.float16, tensor_shape)))
 
-        old_node = old_graph_node[node.name]
-        raw_node = raw_graph_node[node.name]
-        cp_attr = CopyNodeAttr(node)
+                    else:
+                        if old_graph_dtype[1] == "float64":
+                            tensor_value = (np.array(old_graph_node[node.name].double_val)).astype(np.float16)
+                            node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,tf.float16, [1])))
 
-        check_dim(raw_graph_node, old_graph_node, node.name)
-        tensor_shape = [dim.size for dim in raw_node.tensor_shape.dim]
-        old_graph_dtype = PRECISION_MAPPING[old_node.dtype]
-        raw_graph_dtype = PRECISION_MAPPING[raw_node.dtype]
-        log.info(
-            f"{node.name} is passed from old graph({old_graph_dtype}) "
-            f"to raw graph({raw_graph_dtype})"
-        )
+                        elif old_graph_dtype[1] == "float32":
+                            tensor_value = (np.array(old_graph_node[node.name].float_val)).astype(np.float16)
+                            node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,tf.float16, [1])))
 
-        if raw_graph_dtype == np.float16:
-            if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
-                if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(old_node.tensor_content, dtype=np.float16)
-                    cp_attr.from_array(tensor, tf.float16, shape=tensor_shape)
-                else:
-                    tensor = load_tensor(old_node, old_graph_dtype, np.float16)
-                    cp_attr.from_array(tensor, tf.float16, [1])
+                elif old_graph_dtype[1] == "float16":
+                    tensor_value = convertMatrix(np.array(old_graph_node[node.name].half_val), tensor_shape)
+                    node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value, tf.float16, tensor_value.shape)))
+            
+            elif raw_graph_dtype[1] == "float64" or raw_graph_dtype[1] == "float32":
+                if old_graph_dtype[1] == "float64" or old_graph_dtype[1] == "float32":
+                    if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                        tensor_value = np.frombuffer(old_graph_node[node.name].tensor_content,dtype = old_graph_dtype[0])
+                        tensor_value = tensor_value.astype(dtype=raw_graph_dtype[0])
+                        node.attr["value"].tensor.tensor_content = tensor_value.tostring()
 
-            elif old_graph_dtype == np.float16:
-                tensor = convert_matrix(np.array(old_node.half_val), tensor_shape)
-                cp_attr.from_array(tensor, tf.float16)
+                    else:
+                        if old_graph_dtype[1] == "float64":
+                            tensor_value = (np.array(old_graph_node[node.name].double_val)).astype(raw_graph_dtype[0])
+                            node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,raw_graph_dtype[0], [1])))
 
-        elif raw_graph_dtype == np.float64 or raw_graph_dtype == np.float32:
-            if old_graph_dtype == np.float64 or old_graph_dtype == np.float32:
-                if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = np.frombuffer(
-                        old_node.tensor_content, dtype=raw_graph_dtype
-                    )
-                    cp_attr.from_str(tensor)
-                else:
-                    tensor = load_tensor(old_node, old_graph_dtype, raw_graph_dtype)
-                    cp_attr.from_array(tensor, raw_graph_dtype, shape=[1])
-
-            elif old_graph_dtype == np.float16:
-                if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
-                    tensor = convert_matrix(
-                        np.array(old_node.half_val), tensor_shape, dtype=raw_graph_dtype
-                    )
-                    cp_attr.from_str(tensor)
-                else:
-                    tensor = convert_matrix(
-                        np.array(old_node.half_val), tensor_shape, dtype=raw_graph_dtype
-                    )
-                    cp_attr.from_array(tensor, raw_graph_dtype)
+                        elif old_graph_dtype[1] == "float32": 
+                            tensor_value = (np.array(old_graph_node[node.name].float_val)).astype(raw_graph_dtype[0])
+                            node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,raw_graph_dtype[0], [1])))
+                
+                elif old_graph_dtype[1] == "float16":
+                    if (len(tensor_shape) != 1) or (tensor_shape[0] != 1):
+                        tensor_value = convertMatrix(np.array(old_graph_node[node.name].half_val), tensor_shape)
+                        tensor_value = tensor_value.astype(raw_graph_dtype[0])
+                        node.attr["value"].tensor.tensor_content = tensor_value.tostring()
+                    else:
+                        tensor_value = convertMatrix(np.array(old_graph_node[node.name].half_val), tensor_shape)
+                        tensor_value = tensor_value.astype(raw_graph_dtype[0])
+                        node.attr["value"].CopyFrom(tf.AttrValue(tensor=tf.make_tensor_proto(tensor_value,raw_graph_dtype[0], tensor_value.shape)))
 
     return raw_graph_def
 
