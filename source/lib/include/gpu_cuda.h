@@ -4,7 +4,7 @@
 #include <assert.h>
 #include <cuda_runtime.h>
 
-#define GPU_MAX_NBOR_SIZE 4096
+#define GPU_MAX_NBOR_SIZE 2048
 #define cudaErrcheck(res) {cudaAssert((res), __FILE__, __LINE__);}
 inline void cudaAssert(cudaError_t code, const char *file, int line, bool abort=true) {
   if (code != cudaSuccess) {
