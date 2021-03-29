@@ -152,20 +152,20 @@ public:
 
     if(device == "GPU") {
       // allocate temp memory, temp memory must not be used after this operation!
+      env_mat_nbor_update(
+          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
+          mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
+      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       Tensor int_temp;
       TensorShape int_shape;
       int_shape.AddDim(sec_a.size() + nloc * sec_a.size() + nloc);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(nloc * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
-      env_mat_nbor_update(
-          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
-          mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
-      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       #if GOOGLE_CUDA
       // launch the gpu(nv) compute function
       prod_env_mat_a_gpu_cuda(
@@ -304,6 +304,10 @@ public:
     const int * type = type_tensor.flat<int>().data();
 
     if(device == "GPU") {
+      env_mat_nbor_update(
+          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
+          mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
+      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       // allocate temp memory, temp memory must not be used after this operation!
       Tensor int_temp;
       TensorShape int_shape;
@@ -311,14 +315,10 @@ public:
       OP_REQUIRES_OK(context, context->allocate_temp(DT_INT32, int_shape, &int_temp));
       Tensor uint64_temp;
       TensorShape uint64_shape;
-      uint64_shape.AddDim(nloc * GPU_MAX_NBOR_SIZE * 2);
+      uint64_shape.AddDim(nloc * max_nbor_size * 2);
       OP_REQUIRES_OK(context, context->allocate_temp(DT_UINT64, uint64_shape, &uint64_temp));
       array_int = int_temp.flat<int>().data(); 
       array_longlong = uint64_temp.flat<unsigned long long>().data();
-      env_mat_nbor_update(
-          init, ilist, jrange, jlist, ilist_size, jrange_size, jlist_size, max_nbor_size,
-          mesh_tensor.flat<int>().data(), static_cast<int>(mesh_tensor.NumElements()));
-      OP_REQUIRES (context, (max_nbor_size <= GPU_MAX_NBOR_SIZE), errors::InvalidArgument ("Assert failed, max neighbor size of atom(lammps) " + std::to_string(max_nbor_size) + " is larger than " + std::to_string(GPU_MAX_NBOR_SIZE) + ", which currently is not supported by deepmd-kit."));
       #if GOOGLE_CUDA
       // launch the gpu(nv) compute function
       prod_env_mat_r_gpu_cuda(

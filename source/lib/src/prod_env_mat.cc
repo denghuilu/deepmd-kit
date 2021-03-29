@@ -295,14 +295,20 @@ void env_mat_nbor_update(
     for(int ii = 0; ii < mesh_host[2] - 1; ii++) {
       max_nbor_size = (jrange_host[ii + 1] - jrange_host[ii]) > max_nbor_size ? (jrange_host[ii + 1] - jrange_host[ii]) : max_nbor_size;
     }
-    assert(max_nbor_size <= GPU_MAX_NBOR_SIZE);
-    if (max_nbor_size <= 1024) {
+
+    if (max_nbor_size <= 256) {
+      max_nbor_size = 256;
+    }
+    else if (max_nbor_size <= 512) {
+      max_nbor_size = 512;
+    }
+    else if (max_nbor_size <= 1024) {
       max_nbor_size = 1024;
     }
     else if (max_nbor_size <= 2048) {
       max_nbor_size = 2048;
     }
-    else {
+    else if (max_nbor_size <= 4096) {
       max_nbor_size = 4096;
     }
   }

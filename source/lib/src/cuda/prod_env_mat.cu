@@ -151,6 +151,60 @@ __global__ void format_nlist_fill_b(
 }
 
 template<typename FPTYPE>
+void format_nbor_list_256 (
+    int_64 * key,
+    const FPTYPE* coord,
+    const int* type,
+    const int* jrange,
+    const int* jlist,
+    const int& nloc,       
+    const float& rcut, 
+    int * i_idx) 
+{   
+  const int LEN = 256;
+  const int MAX_NBOR_SIZE = 256;
+  const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
+  dim3 block_grid(nloc, nblock);
+  dim3 thread_grid(1, LEN);
+  format_nlist_fill_a<<<block_grid, thread_grid>>> (
+      key,
+      coord, type, jrange, jlist, rcut, i_idx, MAX_NBOR_SIZE);
+  const int ITEMS_PER_THREAD = 4;
+  const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
+      key, 
+      key + nloc * MAX_NBOR_SIZE);
+}
+
+template<typename FPTYPE>
+void format_nbor_list_512 (
+    int_64 * key,
+    const FPTYPE* coord,
+    const int* type,
+    const int* jrange,
+    const int* jlist,
+    const int& nloc,       
+    const float& rcut, 
+    int * i_idx) 
+{   
+  const int LEN = 256;
+  const int MAX_NBOR_SIZE = 512;
+  const int nblock = (MAX_NBOR_SIZE + LEN - 1) / LEN;
+  dim3 block_grid(nloc, nblock);
+  dim3 thread_grid(1, LEN);
+  format_nlist_fill_a<<<block_grid, thread_grid>>> (
+      key,
+      coord, type, jrange, jlist, rcut, i_idx, MAX_NBOR_SIZE);
+  const int ITEMS_PER_THREAD = 4;
+  const int BLOCK_THREADS = MAX_NBOR_SIZE / ITEMS_PER_THREAD;
+  // BlockSortKernel<NeighborInfo, BLOCK_THREADS, ITEMS_PER_THREAD><<<g_grid_size, BLOCK_THREADS>>> (
+  BlockSortKernel<int_64, BLOCK_THREADS, ITEMS_PER_THREAD> <<<nloc, BLOCK_THREADS>>> (
+      key, 
+      key + nloc * MAX_NBOR_SIZE);
+}
+
+template<typename FPTYPE>
 void format_nbor_list_1024 (
     int_64 * key,
     const FPTYPE* coord,
@@ -262,8 +316,18 @@ void format_nbor_list(
   get_i_idx<<<nblock, LEN>>>(
       i_idx,
       nloc, ilist);
-
-  if (max_nbor_size == 1024) {
+  
+  if (max_nbor_size == 256) {
+    format_nbor_list_256 (
+        key,
+        coord, type, jrange, jlist, nloc, rcut, i_idx); 
+  } 
+  else if (max_nbor_size == 512) {
+    format_nbor_list_512 (
+        key,
+        coord, type, jrange, jlist, nloc, rcut, i_idx); 
+  } 
+  else if (max_nbor_size == 1024) {
     format_nbor_list_1024 (
         key,
         coord, type, jrange, jlist, nloc, rcut, i_idx); 
