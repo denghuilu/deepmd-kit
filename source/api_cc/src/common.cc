@@ -389,47 +389,94 @@ session_input_tensors (std::vector<std::pair<std::string, Tensor>> & input_tenso
   aparam_shape.AddDim (nframes);
   aparam_shape.AddDim (aparam_.size());
   
-#ifdef HIGH_PREC
-  Tensor coord_tensor	(DT_DOUBLE, coord_shape);
-  Tensor box_tensor	(DT_DOUBLE, box_shape);
-  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
-  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
-#else
-  Tensor coord_tensor	(DT_FLOAT, coord_shape);
-  Tensor box_tensor	(DT_FLOAT, box_shape);
-  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
-  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
-#endif
   Tensor type_tensor	(DT_INT32, type_shape);
   Tensor mesh_tensor	(DT_INT32, mesh_shape);
   Tensor natoms_tensor	(DT_INT32, natoms_shape);
 
-  auto coord = coord_tensor.matrix<VALUETYPE> ();
-  auto type = type_tensor.matrix<int> ();
-  auto box = box_tensor.matrix<VALUETYPE> ();
-  auto mesh = mesh_tensor.flat<int> ();
-  auto natoms = natoms_tensor.flat<int> ();
-  auto fparam = fparam_tensor.matrix<VALUETYPE> ();
-  auto aparam = aparam_tensor.matrix<VALUETYPE> ();
-
   std::vector<VALUETYPE> dcoord (dcoord_);
   nnpmap.forward (dcoord.begin(), dcoord_.begin(), 3);
+
+#ifdef DOUBLE_PREC
+  Tensor coord_tensor	  (DT_DOUBLE, coord_shape);
+  Tensor box_tensor	    (DT_DOUBLE, box_shape);
+  Tensor fparam_tensor  (DT_DOUBLE, fparam_shape);
+  Tensor aparam_tensor  (DT_DOUBLE, aparam_shape);
+  auto coord = coord_tensor.matrix<double> ();
+  auto box = box_tensor.matrix<double> ();
+  auto fparam = fparam_tensor.matrix<double> ();
+  auto aparam = aparam_tensor.matrix<double> ();
   
-  for (int ii = 0; ii < nframes; ++ii){
-    for (int jj = 0; jj < nall * 3; ++jj){
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall * 3; ++jj) {
       coord(ii, jj) = dcoord[jj];
     }
-    for (int jj = 0; jj < 9; ++jj){
+    for (int jj = 0; jj < 9; ++jj) {
       box(ii, jj) = dbox[jj];
     }
-    for (int jj = 0; jj < nall; ++jj){
-      type(ii, jj) = datype[jj];
-    }
-    for (int jj = 0; jj < fparam_.size(); ++jj){
+    for (int jj = 0; jj < fparam_.size(); ++jj) {
       fparam(ii, jj) = fparam_[jj];
     }
-    for (int jj = 0; jj < aparam_.size(); ++jj){
+    for (int jj = 0; jj < aparam_.size(); ++jj) {
       aparam(ii, jj) = aparam_[jj];
+    }
+  }
+#elif SINGLE_PREC
+  Tensor coord_tensor	  (DT_FLOAT, coord_shape);
+  Tensor box_tensor	    (DT_FLOAT, box_shape);
+  Tensor fparam_tensor  (DT_FLOAT, fparam_shape);
+  Tensor aparam_tensor  (DT_FLOAT, aparam_shape);
+  auto coord = coord_tensor.matrix<float> ();
+  auto box = box_tensor.matrix<float> ();
+  auto fparam = fparam_tensor.matrix<float> ();
+  auto aparam = aparam_tensor.matrix<float> ();
+
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall * 3; ++jj) {
+      coord(ii, jj) = static_cast<float>(dcoord[jj]);
+    }
+    for (int jj = 0; jj < 9; ++jj) {
+      box(ii, jj) = static_cast<float>(dbox[jj]);
+    }
+    for (int jj = 0; jj < fparam_.size(); ++jj) {
+      fparam(ii, jj) = static_cast<float>(fparam_[jj]);
+    }
+    for (int jj = 0; jj < aparam_.size(); ++jj) {
+      aparam(ii, jj) = static_cast<float>(aparam_[jj]);
+    }
+  }
+#elif HALF_PREC
+  Tensor coord_tensor	  (DT_HALF, coord_shape);
+  Tensor box_tensor	    (DT_HALF, box_shape);
+  Tensor fparam_tensor  (DT_HALF, fparam_shape);
+  Tensor aparam_tensor  (DT_HALF, aparam_shape);
+  auto coord = coord_tensor.matrix<Eigen::half> ();
+  auto box = box_tensor.matrix<Eigen::half> ();
+  auto fparam = fparam_tensor.matrix<Eigen::half> ();
+  auto aparam = aparam_tensor.matrix<Eigen::half> ();
+  
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall * 3; ++jj) {
+      coord(ii, jj) = static_cast<Eigen::half>(dcoord[jj]);
+    }
+    for (int jj = 0; jj < 9; ++jj) {
+      box(ii, jj) = static_cast<Eigen::half>(dbox[jj]);
+    }
+    for (int jj = 0; jj < fparam_.size(); ++jj) {
+      fparam(ii, jj) = static_cast<Eigen::half>(fparam_[jj]);
+    }
+    for (int jj = 0; jj < aparam_.size(); ++jj) {
+      aparam(ii, jj) = static_cast<Eigen::half>(aparam_[jj]);
+    }
+  }
+#endif
+
+  auto type = type_tensor.matrix<int> ();
+  auto mesh = mesh_tensor.flat<int> ();
+  auto natoms = natoms_tensor.flat<int> ();
+  
+  for (int ii = 0; ii < nframes; ++ii) {
+    for (int jj = 0; jj < nall; ++jj) {
+      type(ii, jj) = datype[jj];
     }
   }
   

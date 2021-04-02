@@ -64,26 +64,34 @@ run_model (ENERGYTYPE &			dener,
   Tensor output_f = output_tensors[1];
   Tensor output_av = output_tensors[2];
 
+  std::vector<VALUETYPE> dforce (3 * nall);
   auto oe = output_e.flat <ENERGYTYPE> ();
-  auto of = output_f.flat <VALUETYPE> ();
-  auto oav = output_av.flat <VALUETYPE> ();
+#ifdef DOUBLE_PREC
+  auto of = output_f.flat <double> ();
+  auto oav = output_av.flat <double> ();
+#elif SINGLE_PREC
+  auto of = output_f.flat <float> ();
+  auto oav = output_av.flat <float> ();
+#elif HALF_PREC
+  auto of = output_f.flat <Eigen::half> ();
+  auto oav = output_av.flat <Eigen::half> ();
+#endif
 
   dener = oe(0);
-  std::vector<VALUETYPE> dforce (3 * nall);
   dvirial.resize (9);
   for (unsigned ii = 0; ii < nall * 3; ++ii){
-    dforce[ii] = of(ii);
+    dforce[ii] = static_cast<double>(of(ii));
   }
   for (int ii = 0; ii < nall; ++ii) {
-    dvirial[0] += 1.0 * oav(9*ii+0);
-    dvirial[1] += 1.0 * oav(9*ii+1);
-    dvirial[2] += 1.0 * oav(9*ii+2);
-    dvirial[3] += 1.0 * oav(9*ii+3);
-    dvirial[4] += 1.0 * oav(9*ii+4);
-    dvirial[5] += 1.0 * oav(9*ii+5);
-    dvirial[6] += 1.0 * oav(9*ii+6);
-    dvirial[7] += 1.0 * oav(9*ii+7);
-    dvirial[8] += 1.0 * oav(9*ii+8);
+    dvirial[0] += 1.0 * static_cast<double>(oav(9*ii+0));
+    dvirial[1] += 1.0 * static_cast<double>(oav(9*ii+1));
+    dvirial[2] += 1.0 * static_cast<double>(oav(9*ii+2));
+    dvirial[3] += 1.0 * static_cast<double>(oav(9*ii+3));
+    dvirial[4] += 1.0 * static_cast<double>(oav(9*ii+4));
+    dvirial[5] += 1.0 * static_cast<double>(oav(9*ii+5));
+    dvirial[6] += 1.0 * static_cast<double>(oav(9*ii+6));
+    dvirial[7] += 1.0 * static_cast<double>(oav(9*ii+7));
+    dvirial[8] += 1.0 * static_cast<double>(oav(9*ii+8));
   }
   dforce_ = dforce;
   nnpmap.backward (dforce_.begin(), dforce.begin(), 3);
@@ -217,7 +225,15 @@ init (const std::string & model, const int & gpu_rank, const std::string & file_
   #endif // GOOGLE_CUDA
   checkStatus (NewSession(options, &session));
   checkStatus (session->Create(graph_def));
-  rcut = get_scalar<VALUETYPE>("descrpt_attr/rcut");
+
+#if DOUBLE_PREC
+  rcut = static_cast<VALUETYPE>(get_scalar<double>("descrpt_attr/rcut"));
+#elif SINGLE_PREC
+  rcut = static_cast<VALUETYPE>(get_scalar<float>("descrpt_attr/rcut"));
+#elif HALF_PREC
+  rcut = static_cast<VALUETYPE>(get_scalar<Eigen::half>("descrpt_attr/rcut"));
+#endif
+
   cell_size = rcut;
   ntypes = get_scalar<int>("descrpt_attr/ntypes");
   dfparam = get_scalar<int>("fitting_attr/dfparam");

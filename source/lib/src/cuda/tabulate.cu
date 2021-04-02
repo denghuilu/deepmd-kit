@@ -131,7 +131,7 @@ __global__ void tabulate_fifth_order_polynomial(
 {
   const int block_idx = blockIdx.x;   // nloc
   const int thread_idx = threadIdx.x; // last_layer_size
-  int breakpoint = nnei - 1;
+  // int breakpoint = nnei - 1;
 
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE var[6]; 
@@ -248,7 +248,7 @@ __global__ void tabulate_grad_fifth_order_polynomial(
     const int last_layer_size) 
 {
   const int block_idx = blockIdx.x;  // nloc
-  const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usually 128 here~
+  // const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usually 128 here~
   int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
   int lane_idx = threadIdx.x % 32;
   int breakpoint = nnei - 1;

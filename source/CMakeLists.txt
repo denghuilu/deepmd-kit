@@ -165,6 +165,21 @@ else ()
 endif()
 add_definitions (${PREC_DEF})
 
+# set transfer prec
+if (DEFINED PRECISION)
+  string ( TOLOWER ${PRECISION} lower_prec )
+  if (lower_prec STREQUAL "double")
+    set(_PREC_DEF "-DDOUBLE_PREC")
+  elseif (lower_prec STREQUAL "single")
+    set(_PREC_DEF "-DSINGLE_PREC")  
+  elseif (lower_prec STREQUAL "half")  
+    set(_PREC_DEF "-DHALF_PREC") 
+  endif ()
+else ()
+    set(_PREC_DEF "-DDOUBLE_PREC")
+endif()
+add_definitions (${_PREC_DEF})
+
 # find openmp
 find_package(OpenMP)
 if (OPENMP_FOUND)
