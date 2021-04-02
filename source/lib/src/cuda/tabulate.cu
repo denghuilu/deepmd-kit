@@ -117,6 +117,43 @@ template <
     typename FPTYPE,
     int      MTILE,
     int      KTILE> 
+__global__ void tabulate_fifth_order_polynomial(
+    FPTYPE * out, 
+    const FPTYPE * table, 
+    const FPTYPE * em_x, 
+    const FPTYPE lower, 
+    const FPTYPE upper, 
+    const FPTYPE max, 
+    const FPTYPE stride0, 
+    const FPTYPE stride1, 
+    const int nnei, 
+    const int last_layer_size) 
+{
+  const int block_idx = blockIdx.x;   // nloc
+  const int thread_idx = threadIdx.x; // last_layer_size
+  int breakpoint = nnei - 1;
+
+  for (int ii = 0; ii < nnei; ii++) {
+    FPTYPE var[6]; 
+    FPTYPE xx = em_x[block_idx * nnei + ii];
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    var[0] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 0];
+    var[1] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 1];
+    var[2] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 2];
+    var[3] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 3];
+    var[4] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 4];
+    var[5] = table[table_idx * last_layer_size * 6 + thread_idx * 6 + 5];
+    FPTYPE res = var[0] + (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) * xx;
+    
+    out[block_idx * nnei * last_layer_size + ii * last_layer_size + thread_idx] = res;
+  }
+}
+
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE> 
 __global__ void tabulate_fusion_grad_fifth_order_polynomial(
     FPTYPE * dy_dem_x, 
     FPTYPE * dy_dem,   
@@ -193,6 +230,54 @@ __global__ void tabulate_fusion_grad_fifth_order_polynomial(
   }
 }
 
+template <
+    typename FPTYPE,
+    int      MTILE,
+    int      KTILE> 
+__global__ void tabulate_grad_fifth_order_polynomial(
+    FPTYPE * dy_dem_x, 
+    const FPTYPE * table, 
+    const FPTYPE * em_x, 
+    const FPTYPE * dy, 
+    const FPTYPE lower, 
+    const FPTYPE upper, 
+    const FPTYPE max, 
+    const FPTYPE stride0, 
+    const FPTYPE stride1, 
+    const int nnei, 
+    const int last_layer_size) 
+{
+  const int block_idx = blockIdx.x;  // nloc
+  const int thread_idx = threadIdx.x; // KTILE * WARP_SIZE, usually 128 here~
+  int warp_idx = __shfl_sync(0xffffffff, threadIdx.x / 32, 0);
+  int lane_idx = threadIdx.x % 32;
+  int breakpoint = nnei - 1;
+  for (int ii = 0; ii < nnei; ii += KTILE) {
+    FPTYPE xx = em_x[block_idx * nnei + ii + warp_idx];
+    int table_idx = 0;
+    locate_xx(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE Csub = 0.f;
+    for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
+      FPTYPE var[6]; 
+      // load iteratorB through table 
+      var[0]  = table[table_idx * last_layer_size * 6 + 6 * jj + 0]; 
+      var[1]  = table[table_idx * last_layer_size * 6 + 6 * jj + 1]; 
+      var[2]  = table[table_idx * last_layer_size * 6 + 6 * jj + 2]; 
+      var[3]  = table[table_idx * last_layer_size * 6 + 6 * jj + 3];
+      var[4]  = table[table_idx * last_layer_size * 6 + 6 * jj + 4];
+      var[5]  = table[table_idx * last_layer_size * 6 + 6 * jj + 5];
+      FPTYPE res = var[1] + (2 * var[2] + (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) * xx;
+
+      Csub += (nnei - breakpoint) * res * dy[block_idx * nnei * last_layer_size + (ii + warp_idx) * last_layer_size + jj];
+    }
+    __syncwarp();
+    warp_reduce(Csub);
+    if (lane_idx == 0) {
+      dy_dem_x[block_idx * nnei + ii + warp_idx] = Csub;
+    }
+  }
+}
+
 template<typename FPTYPE>
 void tabulate_fusion_gpu_cuda(
     FPTYPE * out,
@@ -234,7 +319,47 @@ void tabulate_fusion_grad_gpu_cuda(
       table, em_x, em, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
 }
 
+template<typename FPTYPE>
+void tabulate_gpu_cuda(
+    FPTYPE * out,
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em_x, 
+    const int nloc,
+    const int nnei, 
+    const int last_layer_size) 
+{
+  tabulate_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, last_layer_size>>>(
+      out, 
+      table, em_x, table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+}
+
+template<typename FPTYPE>
+void tabulate_grad_gpu_cuda(
+    FPTYPE * dy_dem_x, 
+    const FPTYPE * table, 
+    const FPTYPE * table_info, 
+    const FPTYPE * em_x, 
+    const FPTYPE * dy, 
+    const int nloc, 
+    const int nnei, 
+    const int last_layer_size)
+{
+  cudaErrcheck(cudaMemset(
+      dy_dem_x,
+      0.0, sizeof(FPTYPE) * nloc * nnei));
+
+  tabulate_grad_fifth_order_polynomial<FPTYPE, MM, KK> <<<nloc, KK * WARP_SIZE, sizeof(FPTYPE) * MM * last_layer_size>>>(
+      dy_dem_x,
+      table, em_x, dy,  table_info[0], table_info[1], table_info[2], table_info[3], table_info[4], nnei, last_layer_size);
+}
+
 template void tabulate_fusion_gpu_cuda<float>(float * out, const float * table, const float * table_info, const float * em_x, const float * em, const int nloc, const int nnei, const int last_layer_size);
 template void tabulate_fusion_gpu_cuda<double>(double * out, const double * table, const double * table_info, const double * em_x, const double * em, const int nloc, const int nnei, const int last_layer_size);
 template void tabulate_fusion_grad_gpu_cuda<float> (float * dy_dem_x, float * dy_dem, const float * table, const float * table_info, const float * em_x, const float * em, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
 template void tabulate_fusion_grad_gpu_cuda<double> (double * dy_dem_x, double * dy_dem, const double * table, const double * table_info, const double * em_x, const double * em, const double * dy, const int nloc, const int nnei, const int last_layer_size);
+
+template void tabulate_gpu_cuda<float>(float * out, const float * table, const float * table_info, const float * em_x, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_gpu_cuda<double>(double * out, const double * table, const double * table_info, const double * em_x, const int nloc, const int nnei, const int last_layer_size);
+template void tabulate_grad_gpu_cuda<float> (float * dy_dem_x, const float * table, const float * table_info, const float * em_x, const float * dy, const int nloc, const int nnei, const int last_layer_size); 
+template void tabulate_grad_gpu_cuda<double> (double * dy_dem_x, const double * table, const double * table_info, const double * em_x, const double * dy, const int nloc, const int nnei, const int last_layer_size);

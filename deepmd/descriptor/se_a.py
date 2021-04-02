@@ -606,3 +606,83 @@ class DescrptSeA ():
           result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
 
         return result, qmat
+
+    def _filter_tabulation_no_fusion(self, 
+                inputs, 
+                type_input,
+                natoms,
+                activation_fn=tf.nn.tanh, 
+                stddev=1.0,
+                bavg=0.0,
+                name='linear', 
+                reuse=None,
+                seed=None, 
+                trainable = True):
+        # natom x (nei x 4)
+        shape = inputs.get_shape().as_list()
+        outputs_size = [1] + self.filter_neuron
+        outputs_size_2 = self.n_axis_neuron
+        with tf.variable_scope(name, reuse=reuse):
+          start_index = 0
+          for type_i in range(self.ntypes):
+            # cut-out inputs
+            # with natom x (nei_type_i x 4)  
+            inputs_i = tf.slice (inputs,
+                                 [ 0, start_index*      4],
+                                 [-1, self.sel_a[type_i]* 4] )
+            start_index += self.sel_a[type_i]
+            shape_i = inputs_i.get_shape().as_list()
+            # with (natom x nei_type_i) x 4
+            inputs_reshape = tf.reshape(inputs_i, [-1, 4])
+            # with (natom x nei_type_i) x 1
+            xyz_scatter = tf.reshape(tf.slice(inputs_reshape, [0,0],[-1,1]),[-1,1])
+            # with (natom x nei_type_i) x out_size
+            if self.compress and (type_input, type_i) not in self.exclude_types:
+              info = [self.lower, self.upper, self.upper * self.table_config[0], self.table_config[1], self.table_config[2], self.table_config[3]]
+              if self.type_one_side:
+                net = 'filter_-1_net_' + str(type_i)
+              else:
+                net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+              xyz_scatter  = op_module.tabulate(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, natoms, last_layer_size = outputs_size[-1])
+            else:
+              if (type_input, type_i) not in self.exclude_types:
+                  xyz_scatter = embedding_net(xyz_scatter, 
+                                              self.filter_neuron, 
+                                              self.filter_precision, 
+                                              activation_fn = activation_fn, 
+                                              resnet_dt = self.filter_resnet_dt,
+                                              name_suffix = "_"+str(type_i),
+                                              stddev = stddev,
+                                              bavg = bavg,
+                                              seed = seed,
+                                              trainable = trainable)
+              else:
+                w = tf.zeros((outputs_size[0], outputs_size[-1]), dtype=GLOBAL_TF_FLOAT_PRECISION)
+                xyz_scatter = tf.matmul(xyz_scatter, w)
+            # natom x nei_type_i x out_size
+            xyz_scatter = tf.reshape(xyz_scatter, (-1, shape_i[1]//4, outputs_size[-1]))  
+            # xyz_scatter_total.append(xyz_scatter)
+            if type_i == 0 :
+                xyz_scatter_1 = tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+            else :
+                xyz_scatter_1 += tf.matmul(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), xyz_scatter, transpose_a = True)
+          # natom x nei x outputs_size
+          # xyz_scatter = tf.concat(xyz_scatter_total, axis=1)
+          # natom x nei x 4
+          # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
+          # natom x 4 x outputs_size
+          # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+          xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
+          # natom x 4 x outputs_size_2
+          xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
+          # # natom x 3 x outputs_size_2
+          # qmat = tf.slice(xyz_scatter_2, [0,1,0], [-1, 3, -1])
+          # natom x 3 x outputs_size_1
+          qmat = tf.slice(xyz_scatter_1, [0,1,0], [-1, 3, -1])
+          # natom x outputs_size_1 x 3
+          qmat = tf.transpose(qmat, perm = [0, 2, 1])
+          # natom x outputs_size x outputs_size_2
+          result = tf.matmul(xyz_scatter_1, xyz_scatter_2, transpose_a = True)
+          # natom x (outputs_size x outputs_size_2)
+          result = tf.reshape(result, [-1, outputs_size_2 * outputs_size[-1]])
+        return result, qmat
