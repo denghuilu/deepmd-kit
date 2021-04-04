@@ -63,16 +63,21 @@ def _get_package_constants(
 
 GLOBAL_CONFIG = _get_package_constants()
 
-if GLOBAL_CONFIG["precision"] == "-DHIGH_PREC":
+if GLOBAL_CONFIG["precision"] == "-DDOUBLE_PREC":
     GLOBAL_TF_FLOAT_PRECISION = tf.float64
     GLOBAL_NP_FLOAT_PRECISION = np.float64
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "double"
-else:
+elif GLOBAL_CONFIG["precision"] == "-DSINGLE_PREC": 
     GLOBAL_TF_FLOAT_PRECISION = tf.float32
     GLOBAL_NP_FLOAT_PRECISION = np.float32
     GLOBAL_ENER_FLOAT_PRECISION = np.float64
     global_float_prec = "float"
+else:
+    GLOBAL_TF_FLOAT_PRECISION = tf.float16
+    GLOBAL_NP_FLOAT_PRECISION = np.float16
+    GLOBAL_ENER_FLOAT_PRECISION = np.float64
+    global_float_prec = "half"
 
 # http://patorjk.com/software/taag. Font:Big"
 WELCOME = (  # noqa

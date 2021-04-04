@@ -559,10 +559,15 @@ class DescrptSeA ():
                 net = 'filter_-1_net_' + str(type_i)
               else:
                 net = 'filter_' + str(type_input) + '_net_' + str(type_i)
+              self._filter_np_precision = self.filter_np_precision
+              self._filter_precision = self.filter_precision
+              if self.filter_np_precision == np.float16 and self.filter_precision == tf.float16:
+                self._filter_np_precision = np.float32
+                self._filter_precision = tf.float32
               if type_i == 0:
-                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1  = op_module.tabulate_fusion(self.table.data[net].astype(self._filter_np_precision), np.array(info).astype(self._filter_np_precision), tf.cast(xyz_scatter, self._filter_precision), tf.cast(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), self._filter_precision), last_layer_size = outputs_size[-1])
               else:
-                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net].astype(self.filter_np_precision), info, xyz_scatter, tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), last_layer_size = outputs_size[-1])
+                xyz_scatter_1 += op_module.tabulate_fusion(self.table.data[net].astype(self._filter_np_precision), np.array(info).astype(self._filter_np_precision), tf.cast(xyz_scatter, self._filter_precision), tf.cast(tf.reshape(inputs_i, [-1, shape_i[1]//4, 4]), self._filter_precision), last_layer_size = outputs_size[-1])
             else:
               if (type_input, type_i) not in self.exclude_types:
                   xyz_scatter = embedding_net(xyz_scatter, 
@@ -591,6 +596,7 @@ class DescrptSeA ():
           # inputs_reshape = tf.reshape(inputs, [-1, shape[1]//4, 4])
           # natom x 4 x outputs_size
           # xyz_scatter_1 = tf.matmul(inputs_reshape, xyz_scatter, transpose_a = True)
+          xyz_scatter_1 = tf.cast(xyz_scatter_1, self.filter_precision)
           xyz_scatter_1 = xyz_scatter_1 * (4.0 / shape[1])
           # natom x 4 x outputs_size_2
           xyz_scatter_2 = tf.slice(xyz_scatter_1, [0,0,0],[-1,-1,outputs_size_2])
