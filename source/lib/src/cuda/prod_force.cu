@@ -58,6 +58,21 @@ __global__ void force_deriv_wrt_center_atom(
 }
 
 template<typename FPTYPE>
+__global__ void deriv_wrt_center_atom_se_a(FPTYPE * force, 
+                        const FPTYPE * net_deriv,
+                        const FPTYPE * in_deriv,
+                        const int ndescrpt)
+{
+    const unsigned int idx = blockIdx.x;
+    const unsigned int idy = blockIdx.y * blockDim.y + threadIdx.y;
+    const unsigned int idz = threadIdx.x;
+
+    if (idy >= ndescrpt) {return;}
+    
+    atomicAdd(force + idx * 3 + idz, -1.0 * net_deriv[idx * ndescrpt + idy] * in_deriv[idx * ndescrpt * 3 + idy * 3 + idz]);
+}
+
+template<typename FPTYPE>
 __global__ void force_deriv_wrt_neighbors_a(
     FPTYPE * force, 
     const FPTYPE * net_deriv,
@@ -127,9 +142,11 @@ void prod_force_a_gpu_cuda(
       force, 
       0.0, sizeof(FPTYPE) * nall * 3));
 
-  force_deriv_wrt_center_atom<FPTYPE, TPB> <<<nloc, TPB>>>(
-      force, 
-      net_deriv, in_deriv, ndescrpt);
+  const int LEN1 = 256;
+  const int nblock1 = (ndescrpt + LEN1 -1) / LEN1;
+  dim3 grid(nloc, nblock1);
+  dim3 thread(3, LEN1);
+  deriv_wrt_center_atom_se_a<<<grid, thread>>>(force, net_deriv, in_deriv, ndescrpt);
 
   const int LEN = 64;
   const int nblock = (nloc + LEN -1) / LEN;

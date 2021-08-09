@@ -379,15 +379,11 @@ __global__ void compute_env_mat_a(
     const int idx_value = ii * 4;	  // 4 components
     const int idx_deriv = ii * 12;	// 4 components time 3 directions
     if (row_nlist[ii] >= 0) {
-      FPTYPE rr[3]  = {0};
-      FPTYPE dd[4]  = {0};
-      FPTYPE vv[12] = {0};
-      const int j_idx = row_nlist[ii];
+      const int & j_idx = row_nlist[ii];
       for (int kk = 0; kk < 3; kk++) {
-        rr[kk] = coord[j_idx * 3 + kk] - coord[bid * 3 + kk];
-        row_rij[ii * 3 + kk] = rr[kk];
+          row_rij[ii * 3 + kk] = coord[j_idx * 3 + kk] - coord[bid * 3 + kk];
       }
-      // const FPTYPE * rr = &row_rij[ii * 3];
+      const FPTYPE * rr = &row_rij[ii * 3 + 0];
       FPTYPE nr2 = dev_dot(rr, rr);
       FPTYPE inr = 1./sqrt(nr2);
       FPTYPE nr = nr2 * inr;
@@ -396,35 +392,37 @@ __global__ void compute_env_mat_a(
       FPTYPE inr3 = inr4 * nr;
       FPTYPE sw, dsw;
       spline5_switch(sw, dsw, nr, rmin, rmax);
-      dd[0] = (1./nr)       ;//* sw;
-      dd[1] = (rr[0] / nr2) ;//* sw;
-      dd[2] = (rr[1] / nr2) ;//* sw;
-      dd[3] = (rr[2] / nr2) ;//* sw;
-      vv[0] = (rr[0] * inr3 * sw - dd[0] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 0) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 0) % (ndescrpt * 3)) / 3];
-      vv[1] = (rr[1] * inr3 * sw - dd[0] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 1) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 1) % (ndescrpt * 3)) / 3];
-      vv[2] = (rr[2] * inr3 * sw - dd[0] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 2) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 2) % (ndescrpt * 3)) / 3];
+      row_descript[idx_value + 0] = (1./nr)       ;//* sw;
+      row_descript[idx_value + 1] = (rr[0] / nr2) ;//* sw;
+      row_descript[idx_value + 2] = (rr[1] / nr2) ;//* sw;
+      row_descript[idx_value + 3] = (rr[2] / nr2) ;//* sw;
+      row_descript_deriv[idx_deriv + 0] = (rr[0] * inr3 * sw - row_descript[idx_value + 0] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 0) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 0) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 1] = (rr[1] * inr3 * sw - row_descript[idx_value + 0] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 1) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 1) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 2] = (rr[2] * inr3 * sw - row_descript[idx_value + 0] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 2) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 2) % (ndescrpt * 3)) / 3];
       // ****deriv of component x/r2
-      vv[3] = ((2. * rr[0] * rr[0] * inr4 - inr2) * sw - dd[1] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 3) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 3) % (ndescrpt * 3)) / 3];
-      vv[4] = ((2. * rr[0] * rr[1] * inr4	) * sw - dd[1] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 4) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 4) % (ndescrpt * 3)) / 3];
-      vv[5] = ((2. * rr[0] * rr[2] * inr4	) * sw - dd[1] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 5) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 5) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 3] = ((2. * rr[0] * rr[0] * inr4 - inr2) * sw - row_descript[idx_value + 1] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 3) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 3) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 4] = ((2. * rr[0] * rr[1] * inr4	) * sw - row_descript[idx_value + 1] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 4) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 4) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 5] = ((2. * rr[0] * rr[2] * inr4	) * sw - row_descript[idx_value + 1] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 5) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 5) % (ndescrpt * 3)) / 3];
       // ***deriv of component y/r2
-      vv[6] = ((2. * rr[1] * rr[0] * inr4	) * sw - dd[2] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 6) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 6) % (ndescrpt * 3)) / 3];
-      vv[7] = ((2. * rr[1] * rr[1] * inr4 - inr2) * sw - dd[2] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 7) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 7) % (ndescrpt * 3)) / 3];
-      vv[8] = ((2. * rr[1] * rr[2] * inr4	) * sw - dd[2] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 8) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 8) % (ndescrpt * 3)) / 3];
-      // ***deriv of component z/r2 
-      vv[9] = ((2. * rr[2] * rr[0] * inr4	) * sw - dd[3] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 9) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 9) % (ndescrpt * 3)) / 3];
-      vv[10]= ((2. * rr[2] * rr[1] * inr4	) * sw - dd[3] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 10) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 10) % (ndescrpt * 3)) / 3];
-      vv[11]= ((2. * rr[2] * rr[2] * inr4 - inr2) * sw - dd[3] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 11) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 11) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 6] = ((2. * rr[1] * rr[0] * inr4	) * sw - row_descript[idx_value + 2] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 6) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 6) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 7] = ((2. * rr[1] * rr[1] * inr4 - inr2) * sw - row_descript[idx_value + 2] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 7) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 7) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv + 8] = ((2. * rr[1] * rr[2] * inr4	) * sw - row_descript[idx_value + 2] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 8) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 8) % (ndescrpt * 3)) / 3];
+      // ***deriv of component z/r2
+      row_descript_deriv[idx_deriv + 9] = ((2. * rr[2] * rr[0] * inr4	) * sw - row_descript[idx_value + 3] * dsw * rr[0] * inr); // avg[type[(idx_deriv + 9) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 9) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv +10] = ((2. * rr[2] * rr[1] * inr4	) * sw - row_descript[idx_value + 3] * dsw * rr[1] * inr); // avg[type[(idx_deriv + 10) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 10) % (ndescrpt * 3)) / 3];
+      row_descript_deriv[idx_deriv +11] = ((2. * rr[2] * rr[2] * inr4 - inr2) * sw - row_descript[idx_value + 3] * dsw * rr[2] * inr); // avg[type[(idx_deriv + 11) / (ndescrpt * 3)] * ndescrpt + ((idx_deriv + 11) % (ndescrpt * 3)) / 3];
       // 4 value components
-      dd[0] *= sw; // * em[idx * ndescrpt + idx_value + 0]);// - avg[type[idx] * ndescrpt + idx_value + 0]) / std[type[idx] * ndescrpt + idx_value + 0];
-      dd[1] *= sw; // * em[idx * ndescrpt + idx_value + 1]);// - avg[type[idx] * ndescrpt + idx_value + 1]) / std[type[idx] * ndescrpt + idx_value + 1];
-      dd[2] *= sw; // * em[idx * ndescrpt + idx_value + 2]);// - avg[type[idx] * ndescrpt + idx_value + 2]) / std[type[idx] * ndescrpt + idx_value + 2];
-      dd[3] *= sw; // * em[idx * ndescrpt + idx_value + 3]);// - avg[type[idx] * ndescrpt + idx_value + 3]) / std[type[idx] * ndescrpt + idx_value + 3];
-      for (int ii = 0; ii < 12; ii++) {
-        row_descript_deriv[idx_deriv + ii] = vv[ii] / std[type[bid] * ndescrpt + idx_value + ii / 3];
+      row_descript[idx_value + 0] *= sw; // * descript[idx * ndescrpt + idx_value + 0]);// - avg[type[idx] * ndescrpt + idx_value + 0]) / std[type[idx] * ndescrpt + idx_value + 0];
+      row_descript[idx_value + 1] *= sw; // * descript[idx * ndescrpt + idx_value + 1]);// - avg[type[idx] * ndescrpt + idx_value + 1]) / std[type[idx] * ndescrpt + idx_value + 1];
+      row_descript[idx_value + 2] *= sw; // * descript[idx * ndescrpt + idx_value + 2]);// - avg[type[idx] * ndescrpt + idx_value + 2]) / std[type[idx] * ndescrpt + idx_value + 2];
+      row_descript[idx_value + 3] *= sw; // * descript[idx * ndescrpt + idx_value + 3]);// - avg[type[idx] * ndescrpt + idx_value + 3]) / std[type[idx] * ndescrpt + idx_value + 3];
+      for (int ii = 0; ii < 4; ii++) {
+          row_descript[idx_value + ii] = (row_descript[idx_value + ii] - avg[type[bid] * ndescrpt + idx_value + ii]) / std[type[bid] * ndescrpt + idx_value + ii];
       }
-      for (int ii = 0; ii < 4; ii++) {  
-        row_descript[idx_value + ii] = (dd[ii] - avg[type[bid] * ndescrpt + idx_value + ii]) / std[type[bid] * ndescrpt + idx_value + ii];
+      // idy nloc, bid ndescrpt * 3
+      // descript_deriv[idy * ndescrpt * 3 + bid] = (descript_deriv_dev[idy * (ndescrpt * 3) + bid]) / std[type[idy] * ndescrpt + bid / 3];
+      for (int ii = 0; ii < 12; ii++) {
+          row_descript_deriv[idx_deriv + ii] /= std[type[bid] * ndescrpt + (idx_deriv + ii) / 3];
       }
     }
     else {
